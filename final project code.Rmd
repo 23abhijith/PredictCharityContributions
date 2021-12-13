@@ -1,0 +1,112 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+library("xtable")
+library("ggplot2")
+library("reshape2")
+library("patchwork")
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+library(stargazer)
+library(GGally)
+library(dplyr)
+library(stringr)
+library(arm)
+library(pROC)
+library(caret)
+library(e1071)
+library(GGally)
+library(faraway)
+options(xtable.comment = FALSE)
+```
+
+
+```{r}
+library(readxl)
+charity <- read_excel("C:/Users/23abh/Downloads/charity_navigator_clean (1).xlsx")
+charity <- charity[ , -which(names(charity) %in% c("...1","charity_url", "cn_advisory", "city", "state"))]
+charity<- charity[complete.cases(charity), ]
+charity$organization_type <- str_replace(charity$organization_type, " : ", ".")
+charity$organization_type <- sub('\\..*', '', charity$organization_type)
+charity$compensation_leader_title <- as.factor(charity$compensation_leader_title)
+charity$organization_type <- as.factor(charity$organization_type)
+```
+
+```{r}
+hist(charity$total_contributions, main = "Histogram of Total Contribution", xlab="Total Contribution")
+hist(log(charity$total_contributions), main = "Histogram of Log Total Contribution", xlab="Log Total Contribution")
+charity$log_total_contributions <- log(charity$total_contributions)
+charity$program_expenses <- log(charity$program_expenses)
+charity <- charity[(charity$compensation_leader_compensation > 0),]
+charity$compensation_leader_compensation <- log(charity$compensation_leader_compensation)
+charity$fundraising_expenses <- log(charity$fundraising_expenses)
+charity$program_expenses <- log(charity$program_expenses)
+```
+
+```{r}
+charityForPairs <- charity[ , -which(names(charity) %in% c("charity_name","city", "compensation_leader_title", "organization_type", "state", "total_contributions", "administrative_expenses", "compensation_leader_expense_percent", "overall_score", "program_expenses", "net_assets", "other_revenue"))]
+ggpairs(charityForPairs)
+```
+
+```{r}
+plot(charity$fundraising_expenses, charity$log_total_contributions)
+plot(charity$financial_score, charity$log_total_contributions)
+ggplot(charity,aes(x=organization_type, y=log_total_contributions)) +
+  geom_boxplot() + #coord_flip() +
+  scale_fill_brewer(palette="Reds") +
+  labs(title="Organization Type vs log_total_contributions",
+       x="OrgType",y="Contributions") + 
+  theme_classic() + theme(legend.position="none")
+plot(charity$compensation_leader_compensation, charity$log_total_contributions)
+```
+
+```{r}
+NullModel <- lm(log_total_contributions ~ 1,data=charity)
+FullModel <- lm(log_total_contributions ~ accountability_score+ compensation_leader_compensation + 
+    organization_type:compensation_leader_compensation + fundraising_expenses:organization_type + 
+    fundraising_expenses:accountability_score + compensation_leader_compensation:accountability_score +fundraising_expenses+organization_type+financial_score, data = charity)
+Model_stepwise_AIC <-  step(NullModel,  scope  =  formula(FullModel),direction="both",trace=0) #  Let's  see  the  variables  the  model  selected Model_stepwise$call
+Model_stepwise_AIC$call
+# Stepwise model selection using BIC
+n  <-  nrow(charity)
+Model_stepwise_BIC  <-  step(NullModel,  scope  =  formula(FullModel),direction="both",trace=0, k  =  log(n))
+Model_stepwise_BIC$call
+```
+
+```{r}
+basic <- lm(formula = log_total_contributions ~ fundraising_expenses, data = charity)
+summary(basic)
+```
+```{r}
+bic <- lm(formula = log_total_contributions ~ fundraising_expenses + 
+    financial_score + organization_type + compensation_leader_compensation + 
+    organization_type:compensation_leader_compensation, data = charity)
+xtable(bic)
+```
+
+```{r}
+ggplot(charity,aes(x=fundraising_expenses, y=bic$residual)) +
+geom_point(alpha = .7) + geom_hline(yintercept=0,col="red3") + theme_classic() +
+labs(title="Final Model Residuals vs fundraising_expenses",x="Age in yrs.",y="Residuals")
+ggplot(charity,aes(x=financial_score, y=bic$residual)) +
+geom_point(alpha = .7) + geom_hline(yintercept=0,col="red3") + theme_classic() +
+labs(title="Final Model Residuals vs financial_score",x="Age in yrs.",y="Residuals")
+ggplot(charity,aes(x=compensation_leader_compensation, y=bic$residual)) +
+geom_point(alpha = .7) + geom_hline(yintercept=0,col="red3") + theme_classic() +
+labs(title="Final Model Residuals vs compensation_leader_compensation",x="Age in yrs.",y="Residuals")
+```
+
+```{r}
+plot(bic)
+```
+```{r}
+vif(bic)
+```
